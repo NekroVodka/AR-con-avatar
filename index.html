@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mi avatar en Realidad Aumentada</title>
+  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; font-family: system-ui, sans-serif; }
+    #info { position: fixed; z-index: 5; top: 12px; left: 12px; right: 12px; padding: 12px 14px; color: #fff; background: rgba(0,0,0,.68); border-radius: 12px; font-size: 14px; line-height: 1.4; pointer-events: none; }
+    #info strong { display:block; font-size: 16px; margin-bottom: 3px; }
+  </style>
+  <script type="module">
+    import { FBXLoader } from 'https://esm.sh/three@0.170.0/examples/jsm/loaders/FBXLoader.js';
+    import * as THREE from 'https://esm.sh/three@0.170.0';
+
+    AFRAME.registerComponent('fbx-avatar', {
+      schema: { src: { type: 'string', default: './Dancing%20Twerk.fbx' } },
+      init() {
+        this.mixer = null;
+        this.el.sceneEl.addEventListener('loaded', () => this.loadAvatar());
+      },
+      loadAvatar() {
+        const loader = new FBXLoader();
+        loader.load(this.data.src, (model) => {
+          // Normalize the FBX height so it is a practical AR character size.
+          const bounds = new THREE.Box3().setFromObject(model);
+          const size = new THREE.Vector3();
+          bounds.getSize(size);
+          const height = size.y || 100;
+          const scale = 1.6 / height;
+          model.scale.setScalar(scale);
+          const scaledBounds = new THREE.Box3().setFromObject(model);
+          model.position.y -= scaledBounds.min.y;
+          model.traverse((obj) => {
+            if (obj.isMesh) {
+              obj.frustumCulled = false;
+              if (obj.material) {
+                const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                mats.forEach((m) => { if (m) m.side = THREE.DoubleSide; });
+              }
+            }
+          });
+          this.el.object3D.add(model);
+          if (model.animations && model.animations.length) {
+            this.mixer = new THREE.AnimationMixer(model);
+            model.animations.forEach((clip) => this.mixer.clipAction(clip).play());
+            this.tick = (time, delta) => { if (this.mixer) this.mixer.update(Math.min(delta / 1000, 0.05)); };
+          } else {
+            document.getElementById('status').textContent = 'Modelo cargado; el FBX no incluye clips de animación.';
+          }
+          document.getElementById('status').textContent = model.animations?.length
+            ? `Avatar cargado: ${model.animations.length} animación(es) en reproducción.`
+            : 'Avatar cargado. No se detectó una animación dentro del FBX.';
+        }, undefined, (error) => {
+          console.error('No se pudo cargar el FBX:', error);
+          document.getElementById('status').textContent = 'No se pudo cargar el FBX. Comprueba que el archivo esté junto a index.html y que la web esté publicada por HTTPS.';
+        });
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="info"><strong>¡Hola, avatar!</strong><span id="status">Cargando el modelo y su animación…</span><br>En un móvil compatible, pulsa el botón de AR para verlo en tu entorno.</div>
+  <a-scene xr-mode-ui="XRMode: xr;" renderer="colorManagement: true;" background="color: #20242b">
+    <a-entity light="type: ambient; intensity: 1.25"></a-entity>
+    <a-entity light="type: directional; intensity: 1.5" position="-1 3 2"></a-entity>
+    <a-entity id="avatar" fbx-avatar="src: ./Dancing%20Twerk.fbx" position="0 0 -1.5"></a-entity>
+    <a-camera position="0 1.6 0" look-controls></a-camera>
+  </a-scene>
+</body>
+</html>
