@@ -1,0 +1,278 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <title>Reto AR — Mira su baile</title>
+
+  <script src="https://aframe.io/releases/1.7.1/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@6.1.1/dist/aframe-extras.min.js"></script>
+
+  <script>
+    AFRAME.registerComponent('ar-floor-placement', {
+      init: function () {
+        const el = this.el;
+        const scene = el.sceneEl;
+        const status = document.querySelector('#status');
+
+        this.hitSource = null;
+        this.placed = false;
+        this.starting = false;
+
+        // Conserva la vista 3D normal fuera del modo AR.
+        el.object3D.visible = true;
+
+        scene.renderer.xr.addEventListener('sessionstart', async () => {
+          this.placed = false;
+          this.starting = true;
+          this.hitSource = null;
+          el.object3D.visible = false;
+
+          status.textContent = 'Apunta lentamente al suelo...';
+
+          try {
+            const session = scene.renderer.xr.getSession();
+
+            const viewerSpace =
+              await session.requestReferenceSpace('viewer');
+
+            this.hitSource = await session.requestHitTestSource({
+              space: viewerSpace
+            });
+
+            this.starting = false;
+          } catch (error) {
+            this.starting = false;
+            status.textContent =
+              'No se pudo activar la detección del suelo.';
+            console.error('Error al iniciar hit-test:', error);
+          }
+        });
+
+        scene.renderer.xr.addEventListener('sessionend', () => {
+          this.hitSource = null;
+          this.placed = false;
+          this.starting = false;
+          el.object3D.visible = true;
+          status.textContent = 'AR finalizada. Puedes volver a entrar.';
+        });
+      },
+
+      tick: function () {
+        if (this.placed || this.starting || !this.hitSource) {
+          return;
+        }
+
+        const renderer = this.el.sceneEl.renderer;
+        const frame = renderer.xr.getFrame();
+        const referenceSpace = renderer.xr.getReferenceSpace();
+
+        if (!frame || !referenceSpace) return;
+
+        const hits = frame.getHitTestResults(this.hitSource);
+
+        // Los resultados suelen venir ordenados por distancia.
+        // Buscamos una superficie aproximadamente horizontal,
+        // con la normal orientada hacia arriba.
+        for (const hit of hits) {
+          const pose = hit.getPose(referenceSpace);
+          if (!pose) continue;
+
+          const q = pose.transform.orientation;
+
+          const normal = new THREE.Vector3(0, 1, 0);
+          normal.applyQuaternion(
+            new THREE.Quaternion(q.x, q.y, q.z, q.w)
+          );
+
+          // Descarta paredes y otras superficies verticales.
+          if (normal.y < 0.75) continue;
+
+          const p = pose.transform.position;
+
+          this.el.object3D.position.set(p.x, p.y, p.z);
+          this.el.object3D.visible = true;
+          this.placed = true;
+
+          document.querySelector('#status').textContent =
+            '¡Avatar colocado! Está bailando.';
+
+          break;
+        }
+      },
+
+      remove: function () {
+        if (this.hitSource) {
+          try {
+            this.hitSource.cancel();
+          } catch (error) {
+            console.warn('No se pudo cancelar hit-test:', error);
+          }
+        }
+      }
+    });
+  </script>
+
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, sans-serif;
+      background: #111827;
+    }
+
+    .panel {
+      position: fixed;
+      z-index: 5;
+      top: max(14px, env(safe-area-inset-top));
+      left: 14px;
+      right: 14px;
+      color: white;
+      pointer-events: none;
+    }
+
+    .panel-inner {
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      border: 1px solid #ffffff30;
+      border-radius: 16px;
+      background: #111827d9;
+      box-shadow: 0 8px 30px #0004;
+    }
+
+    h1 {
+      margin: 0 0 5px;
+      font-size: clamp(18px, 4vw, 25px);
+    }
+
+    p {
+      margin: 0;
+      line-height: 1.4;
+      font-size: 14px;
+      color: #e5e7eb;
+    }
+
+    .status {
+      margin-top: 7px;
+      color: #a7f3d0;
+      font-weight: 600;
+    }
+
+    .a-enter-vr, .a-enter-ar {
+      z-index: 10 !important;
+    }
+
+    .hint {
+      margin-top: 5px;
+      color: #cbd5e1;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="panel">
+    <div class="panel-inner">
+      <h1>¡Mira mi baile!</h1>
+      <p>
+        Pulsa el botón de AR para verlo en tu entorno real.
+        Permite el acceso a la cámara si el navegador lo solicita.
+      </p>
+      <p class="status" id="status">Avatar cargando…</p>
+      <p class="hint">
+        En móvil compatible, abre esta página con HTTPS y pulsa
+        “Entrar en AR”. En ordenador puedes ver el modelo en 3D.
+      </p>
+    </div>
+  </div>
+
+  <a-scene
+    xr-mode-ui="XRMode: xr;"
+    webxr="optionalFeatures: hit-test, local-floor, bounded-floor;"
+    renderer="colorManagement: true; physicallyCorrectLights: true"
+    background="color: #202938"
+    loading-screen="dotsColor: #34d399; backgroundColor: #111827">
+
+    <a-assets timeout="15000">
+      <a-asset-item
+        id="avatarModel"
+        src="./Twerk_personaje.glb">
+      </a-asset-item>
+    </a-assets>
+
+    <a-entity
+      light="type: ambient; intensity: 1.2">
+    </a-entity>
+
+    <a-entity
+      light="type: directional; intensity: 1.1"
+      position="1 3 2">
+    </a-entity>
+
+    <!-- Suelo visible en la vista 3D normal -->
+    <a-plane
+      rotation="-90 0 0"
+      width="10"
+      height="10"
+      color="#64748b"
+      material="roughness: 1">
+    </a-plane>
+
+    <!-- Contenedor que se coloca en el suelo detectado -->
+    <a-entity
+      id="avatar"
+      position="0 0 -2"
+      ar-floor-placement>
+
+      <!-- Ajusta aquí el giro y el tamaño del personaje -->
+      <a-entity
+        id="avatarModelEntity"
+        gltf-model="#avatarModel"
+        position="0 0 0"
+        rotation="0 90 0"
+        scale="0.5 0.5 0.5"
+        animation-mixer="clip: *; loop: repeat"
+        shadow="cast: true; receive: false">
+      </a-entity>
+
+      <!-- Texto colocado junto al personaje -->
+      <a-entity position="0 2.2 0">
+        <a-text
+          value="¡Hola!"
+          align="center"
+          color="#ffffff"
+          width="4"
+          position="0 0 0">
+        </a-text>
+      </a-entity>
+
+    </a-entity>
+
+    <a-entity
+      camera
+      look-controls
+      position="0 1.6 2.5">
+    </a-entity>
+  </a-scene>
+
+  <script>
+    const avatarModel = document.querySelector('#avatarModelEntity');
+    const status = document.querySelector('#status');
+
+    avatarModel.addEventListener('model-loaded', () => {
+      status.textContent =
+        '¡Avatar listo! Pulsa AR y apunta al suelo.';
+    });
+
+    avatarModel.addEventListener('model-error', () => {
+      status.textContent =
+        'No se pudo cargar el modelo. Comprueba que Twerk_personaje.glb esté junto a index.html.';
+    });
+  </script>
+</body>
+</html>
