@@ -1,0 +1,1 @@
+Proyecto inicial para publicar en GitHub Pages. Carga `Dancing Twerk.fbx` y reproduce los clips de animación que estén incluidos dentro del FBX.
